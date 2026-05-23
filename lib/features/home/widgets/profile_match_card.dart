@@ -9,6 +9,8 @@ class ProfileMatchCard extends StatelessWidget {
     required this.profession,
     required this.city,
     required this.cardColor,
+    this.onShortlist,
+    this.onSkip,
   });
 
   final String name;
@@ -16,6 +18,8 @@ class ProfileMatchCard extends StatelessWidget {
   final String profession;
   final String city;
   final Color cardColor;
+  final VoidCallback? onShortlist;
+  final VoidCallback? onSkip;
 
   static const _primary = Color(0xFF7b001f);
 
@@ -110,7 +114,7 @@ class ProfileMatchCard extends StatelessWidget {
                         ),
                         const SizedBox(width: 6),
                         GestureDetector(
-                          onTap: () {},
+                          onTap: onShortlist,
                           child: Container(
                             width: 32,
                             height: 32,
@@ -125,6 +129,27 @@ class ProfileMatchCard extends StatelessWidget {
                             child: const Icon(
                               Icons.star_border,
                               color: Colors.white,
+                              size: 16,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        GestureDetector(
+                          onTap: onSkip,
+                          child: Container(
+                            width: 32,
+                            height: 32,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.15),
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.4),
+                                width: 1,
+                              ),
+                            ),
+                            child: const Icon(
+                              Icons.close,
+                              color: Colors.white70,
                               size: 16,
                             ),
                           ),

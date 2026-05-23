@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:thiruvivaha_mobile/features/home/domain/entities/daily_recommendation.dart';
 import 'package:thiruvivaha_mobile/features/home/domain/entities/partner_preferences.dart';
 import 'package:thiruvivaha_mobile/features/home/presentation/providers/daily_recommendations_provider.dart';
+import 'package:thiruvivaha_mobile/features/home/presentation/providers/filtered_profiles_provider.dart';
 import 'package:thiruvivaha_mobile/features/home/presentation/providers/partner_preferences_provider.dart';
 import 'package:thiruvivaha_mobile/features/home/widgets/home_filter_chip.dart';
 import 'package:thiruvivaha_mobile/features/home/widgets/profile_match_card.dart';
@@ -22,24 +23,62 @@ const _cardColors = [
 // MatchesTab
 // ---------------------------------------------------------------------------
 
-class MatchesTab extends ConsumerWidget {
+class MatchesTab extends ConsumerStatefulWidget {
   const MatchesTab({super.key});
 
+  @override
+  ConsumerState<MatchesTab> createState() => _MatchesTabState();
+}
+
+class _MatchesTabState extends ConsumerState<MatchesTab> {
   static const _primary = Color(0xFF7b001f);
 
+  late final ScrollController _scrollController;
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  void initState() {
+    super.initState();
+    _scrollController = ScrollController();
+    _scrollController.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    final pos = _scrollController.position;
+    if (pos.pixels >= pos.maxScrollExtent - 300) {
+      ref.read(filteredProfilesProvider.notifier).loadMore();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final prefsAsync = ref.watch(partnerPreferencesProvider);
     final recsAsync = ref.watch(dailyRecommendationsProvider);
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildTodaysMatches(recsAsync),
-          _buildFilters(prefsAsync),
-          _buildMatchesGrid(recsAsync),
-          const SizedBox(height: 24),
-        ],
+    final filtered = ref.watch(filteredProfilesProvider);
+
+    return RefreshIndicator(
+      color: _primary,
+      onRefresh: () async {
+        ref.invalidate(dailyRecommendationsProvider);
+        await ref.read(filteredProfilesProvider.notifier).refresh();
+      },
+      child: SingleChildScrollView(
+        controller: _scrollController,
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildTodaysMatches(recsAsync),
+            _buildFilters(prefsAsync),
+            _buildMatchesGrid(filtered),
+            const SizedBox(height: 24),
+          ],
+        ),
       ),
     );
   }
@@ -179,55 +218,107 @@ class MatchesTab extends ConsumerWidget {
     );
   }
 
-  Widget _buildMatchesGrid(AsyncValue<List<DailyRecommendation>> recsAsync) {
-    return recsAsync.when(
-      data: (recs) {
-        if (recs.isEmpty) return const SizedBox.shrink();
-        // Build rows of 2; pad with an empty slot if odd count.
-        final rows = <Widget>[];
-        for (int i = 0; i < recs.length; i += 2) {
-          final left = recs[i];
-          final right = i + 1 < recs.length ? recs[i + 1] : null;
-          rows.add(
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: ProfileMatchCard(
-                    name: left.fullName,
-                    age: left.age ?? 0,
-                    profession: left.occupation ?? '—',
-                    city: left.displayLocation,
-                    cardColor: _cardColors[i % _cardColors.length],
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: right != null
-                      ? ProfileMatchCard(
-                          name: right.fullName,
-                          age: right.age ?? 0,
-                          profession: right.occupation ?? '—',
-                          city: right.displayLocation,
-                          cardColor: _cardColors[(i + 1) % _cardColors.length],
-                        )
-                      : const SizedBox.shrink(),
-                ),
-              ],
-            ),
-          );
-          if (i + 2 < recs.length) rows.add(const SizedBox(height: 12));
-        }
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-          child: Column(children: rows),
-        );
-      },
-      loading: () => const Padding(
-        padding: EdgeInsets.all(32),
+  Widget _buildMatchesGrid(FilteredProfilesState state) {
+    // ── Initial loading ────────────────────────────────────────────────────
+    if (state.isLoading) {
+      return const Padding(
+        padding: EdgeInsets.all(48),
         child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+      );
+    }
+
+    // ── Error ──────────────────────────────────────────────────────────────
+    if (state.error != null && state.profiles.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.all(32),
+        child: Center(
+          child: Text(
+            'Failed to load profiles',
+            style: GoogleFonts.manrope(fontSize: 13, color: Colors.grey),
+          ),
+        ),
+      );
+    }
+
+    // ── Empty ──────────────────────────────────────────────────────────────
+    if (state.profiles.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.all(32),
+        child: Center(
+          child: Text(
+            'No matches found',
+            style: GoogleFonts.manrope(fontSize: 13, color: Colors.grey),
+          ),
+        ),
+      );
+    }
+
+    // ── Grid ───────────────────────────────────────────────────────────────
+    final recs = state.profiles;
+    final rows = <Widget>[];
+
+    for (int i = 0; i < recs.length; i += 2) {
+      final left = recs[i];
+      final right = i + 1 < recs.length ? recs[i + 1] : null;
+      rows.add(
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: ProfileMatchCard(
+                name: left.fullName,
+                age: left.age ?? 0,
+                profession: left.occupation ?? '—',
+                city: left.displayLocation,
+                cardColor: _cardColors[i % _cardColors.length],
+                onSkip: () => ref
+                    .read(filteredProfilesProvider.notifier)
+                    .skipProfile(left.id),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: right != null
+                  ? ProfileMatchCard(
+                      name: right.fullName,
+                      age: right.age ?? 0,
+                      profession: right.occupation ?? '—',
+                      city: right.displayLocation,
+                      cardColor: _cardColors[(i + 1) % _cardColors.length],
+                      onSkip: () => ref
+                          .read(filteredProfilesProvider.notifier)
+                          .skipProfile(right.id),
+                    )
+                  : const SizedBox.shrink(),
+            ),
+          ],
+        ),
+      );
+      if (i + 2 < recs.length) rows.add(const SizedBox(height: 12));
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+      child: Column(
+        children: [
+          ...rows,
+          const SizedBox(height: 16),
+          // ── Pagination footer ────────────────────────────────────────
+          if (state.isLoadingMore)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          else if (!state.hasMore)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Text(
+                'You\'ve seen all matches',
+                style: GoogleFonts.manrope(fontSize: 12, color: Colors.grey),
+              ),
+            ),
+        ],
       ),
-      error: (_, __) => const SizedBox.shrink(),
     );
   }
 }
