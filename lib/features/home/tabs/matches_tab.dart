@@ -1,61 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:thiruvivaha_mobile/features/home/domain/entities/daily_recommendation.dart';
 import 'package:thiruvivaha_mobile/features/home/domain/entities/partner_preferences.dart';
+import 'package:thiruvivaha_mobile/features/home/presentation/providers/daily_recommendations_provider.dart';
 import 'package:thiruvivaha_mobile/features/home/presentation/providers/partner_preferences_provider.dart';
 import 'package:thiruvivaha_mobile/features/home/widgets/home_filter_chip.dart';
 import 'package:thiruvivaha_mobile/features/home/widgets/profile_match_card.dart';
 import 'package:thiruvivaha_mobile/features/home/widgets/today_match_avatar.dart';
 
-// ---------------------------------------------------------------------------
-// Mock data (replace with real providers/repositories later)
-// ---------------------------------------------------------------------------
-
-class _TodayMatch {
-  final String name;
-  final int age;
-  final Color avatarColor;
-  const _TodayMatch(this.name, this.age, this.avatarColor);
-}
-
-class _ProfileCard {
-  final String name;
-  final int age;
-  final String profession;
-  final String city;
-  final Color cardColor;
-  const _ProfileCard(
-    this.name,
-    this.age,
-    this.profession,
-    this.city,
-    this.cardColor,
-  );
-}
-
-const _todayMatches = [
-  _TodayMatch('Priya', 26, Color(0xFFB5927B)),
-  _TodayMatch('Ananya', 25, Color(0xFFD4956A)),
-  _TodayMatch('Rahul', 29, Color(0xFF6B8CAE)),
-  _TodayMatch('Sana', 27, Color(0xFFD4A574)),
-];
-
-const _profileCards = [
-  _ProfileCard(
-    'Meera Iyer',
-    27,
-    'Software Engineer',
-    'Mumbai',
-    Color(0xFF8B7355),
-  ),
-  _ProfileCard('Vikram Mehta', 30, 'C.A.', 'Ahmedabad', Color(0xFF9B8B7A)),
-  _ProfileCard(
-    'Aditi Sharma',
-    25,
-    'Graphic Designer',
-    'Bangalore',
-    Color(0xFF7A9B7A),
-  ),
+// Palette cycled for avatar/card backgrounds when no photo is available.
+const _cardColors = [
+  Color(0xFFB5927B),
+  Color(0xFFD4956A),
+  Color(0xFF6B8CAE),
+  Color(0xFFD4A574),
+  Color(0xFF7A9B7A),
 ];
 
 // ---------------------------------------------------------------------------
@@ -70,20 +30,21 @@ class MatchesTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final prefsAsync = ref.watch(partnerPreferencesProvider);
+    final recsAsync = ref.watch(dailyRecommendationsProvider);
     return SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildTodaysMatches(),
+          _buildTodaysMatches(recsAsync),
           _buildFilters(prefsAsync),
-          _buildMatchesGrid(),
+          _buildMatchesGrid(recsAsync),
           const SizedBox(height: 24),
         ],
       ),
     );
   }
 
-  Widget _buildTodaysMatches() {
+  Widget _buildTodaysMatches(AsyncValue<List<DailyRecommendation>> recsAsync) {
     return Container(
       color: Colors.white,
       padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
@@ -119,19 +80,40 @@ class MatchesTab extends ConsumerWidget {
           const SizedBox(height: 16),
           SizedBox(
             height: 110,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: _todayMatches.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 16),
-              itemBuilder: (context, index) {
-                final m = _todayMatches[index];
-                return TodayMatchAvatar(
-                  name: m.name,
-                  age: m.age,
-                  avatarColor: m.avatarColor,
-                  primary: _primary,
-                );
-              },
+            child: recsAsync.when(
+              data: (recs) => recs.isEmpty
+                  ? Center(
+                      child: Text(
+                        'No matches found',
+                        style: GoogleFonts.manrope(
+                          fontSize: 13,
+                          color: Colors.grey,
+                        ),
+                      ),
+                    )
+                  : ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: recs.length,
+                      separatorBuilder: (_, __) => const SizedBox(width: 16),
+                      itemBuilder: (context, index) {
+                        final r = recs[index];
+                        return TodayMatchAvatar(
+                          name: r.fullName,
+                          age: r.age ?? 0,
+                          avatarColor: _cardColors[index % _cardColors.length],
+                          primary: _primary,
+                        );
+                      },
+                    ),
+              loading: () => const Center(
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              error: (_, __) => Center(
+                child: Text(
+                  'Failed to load matches',
+                  style: GoogleFonts.manrope(fontSize: 13, color: Colors.grey),
+                ),
+              ),
             ),
           ),
         ],
@@ -197,54 +179,55 @@ class MatchesTab extends ConsumerWidget {
     );
   }
 
-  Widget _buildMatchesGrid() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-      child: Column(
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: ProfileMatchCard(
-                  name: _profileCards[0].name,
-                  age: _profileCards[0].age,
-                  profession: _profileCards[0].profession,
-                  city: _profileCards[0].city,
-                  cardColor: _profileCards[0].cardColor,
+  Widget _buildMatchesGrid(AsyncValue<List<DailyRecommendation>> recsAsync) {
+    return recsAsync.when(
+      data: (recs) {
+        if (recs.isEmpty) return const SizedBox.shrink();
+        // Build rows of 2; pad with an empty slot if odd count.
+        final rows = <Widget>[];
+        for (int i = 0; i < recs.length; i += 2) {
+          final left = recs[i];
+          final right = i + 1 < recs.length ? recs[i + 1] : null;
+          rows.add(
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: ProfileMatchCard(
+                    name: left.fullName,
+                    age: left.age ?? 0,
+                    profession: left.occupation ?? '—',
+                    city: left.displayLocation,
+                    cardColor: _cardColors[i % _cardColors.length],
+                  ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: ProfileMatchCard(
-                  name: _profileCards[1].name,
-                  age: _profileCards[1].age,
-                  profession: _profileCards[1].profession,
-                  city: _profileCards[1].city,
-                  cardColor: _profileCards[1].cardColor,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: right != null
+                      ? ProfileMatchCard(
+                          name: right.fullName,
+                          age: right.age ?? 0,
+                          profession: right.occupation ?? '—',
+                          city: right.displayLocation,
+                          cardColor: _cardColors[(i + 1) % _cardColors.length],
+                        )
+                      : const SizedBox.shrink(),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: ProfileMatchCard(
-                  name: _profileCards[2].name,
-                  age: _profileCards[2].age,
-                  profession: _profileCards[2].profession,
-                  city: _profileCards[2].city,
-                  cardColor: _profileCards[2].cardColor,
-                ),
-              ),
-              const SizedBox(width: 12),
-              const Expanded(child: SizedBox()),
-            ],
-          ),
-        ],
+              ],
+            ),
+          );
+          if (i + 2 < recs.length) rows.add(const SizedBox(height: 12));
+        }
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+          child: Column(children: rows),
+        );
+      },
+      loading: () => const Padding(
+        padding: EdgeInsets.all(32),
+        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
       ),
+      error: (_, __) => const SizedBox.shrink(),
     );
   }
 }
