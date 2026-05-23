@@ -33,8 +33,21 @@ class MyApp extends ConsumerWidget {
       debugShowCheckedModeBanner: false,
       home: authState.maybeWhen(
         authenticated: (_) => const HomePage(),
+        loading: () => const _SplashScreen(),
         orElse: () => const LoginPage(),
       ),
+    );
+  }
+}
+
+class _SplashScreen extends StatelessWidget {
+  const _SplashScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      backgroundColor: Colors.white,
+      body: Center(child: CircularProgressIndicator(color: Color(0xFF7b001f))),
     );
   }
 }

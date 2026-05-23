@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show AuthChangeEvent;
 import 'package:thiruvivaha_mobile/config/supabase_config.dart';
 import 'package:thiruvivaha_mobile/core/utils/logger.dart';
 import 'package:thiruvivaha_mobile/features/auth/data/datasources/auth_remote_datasource.dart';
@@ -27,8 +30,50 @@ final currentUserProvider = FutureProvider<UserEntity?>((ref) async {
 // State Notifier
 class AuthNotifier extends StateNotifier<AuthState> {
   final AuthRepository _authRepository;
+  StreamSubscription<dynamic>? _authSubscription;
 
-  AuthNotifier(this._authRepository) : super(const AuthState.initial());
+  AuthNotifier(this._authRepository) : super(const AuthState.loading()) {
+    _initialize();
+  }
+
+  /// Restores an existing session on app launch, then subscribes to
+  /// Supabase auth changes (token refresh, sign-out, etc.).
+  Future<void> _initialize() async {
+    try {
+      final user = await _authRepository.getCurrentUser();
+      state = user != null
+          ? AuthState.authenticated(user)
+          : const AuthState.initial();
+    } catch (e) {
+      AppLogger.error('AuthNotifier: Session restore error - $e');
+      state = const AuthState.initial();
+    }
+
+    // Reactively handle auth changes from Supabase (token refresh, sign-out).
+    _authSubscription = SupabaseConfig.auth.onAuthStateChange.listen(
+      (data) async {
+        final event = data.event;
+        AppLogger.debug('AuthNotifier: auth event - $event');
+        if (event == AuthChangeEvent.signedIn ||
+            event == AuthChangeEvent.tokenRefreshed ||
+            event == AuthChangeEvent.userUpdated) {
+          final user = await _authRepository.getCurrentUser();
+          if (user != null) state = AuthState.authenticated(user);
+        } else if (event == AuthChangeEvent.signedOut) {
+          state = const AuthState.initial();
+        }
+      },
+      onError: (e) {
+        AppLogger.error('AuthNotifier: auth stream error - $e');
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _authSubscription?.cancel();
+    super.dispose();
+  }
 
   Future<void> login(String email, String password) async {
     state = const AuthState.loading();

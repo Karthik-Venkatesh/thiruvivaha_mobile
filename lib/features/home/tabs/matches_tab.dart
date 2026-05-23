@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:thiruvivaha_mobile/features/home/domain/entities/partner_preferences.dart';
+import 'package:thiruvivaha_mobile/features/home/presentation/providers/partner_preferences_provider.dart';
 import 'package:thiruvivaha_mobile/features/home/widgets/home_filter_chip.dart';
 import 'package:thiruvivaha_mobile/features/home/widgets/profile_match_card.dart';
 import 'package:thiruvivaha_mobile/features/home/widgets/today_match_avatar.dart';
@@ -59,19 +62,20 @@ const _profileCards = [
 // MatchesTab
 // ---------------------------------------------------------------------------
 
-class MatchesTab extends StatelessWidget {
+class MatchesTab extends ConsumerWidget {
   const MatchesTab({super.key});
 
   static const _primary = Color(0xFF7b001f);
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final prefsAsync = ref.watch(partnerPreferencesProvider);
     return SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildTodaysMatches(),
-          _buildFilters(),
+          _buildFilters(prefsAsync),
           _buildMatchesGrid(),
           const SizedBox(height: 24),
         ],
@@ -135,7 +139,7 @@ class MatchesTab extends StatelessWidget {
     );
   }
 
-  Widget _buildFilters() {
+  Widget _buildFilters(AsyncValue<PartnerPreferences?> prefsAsync) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: SingleChildScrollView(
@@ -165,10 +169,28 @@ class MatchesTab extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(width: 10),
-            const HomeFilterChip(label: 'Age: 24-30'),
-            const SizedBox(width: 10),
-            const HomeFilterChip(label: 'Community'),
+            ...prefsAsync.when<List<Widget>>(
+              data: (prefs) {
+                final labels = prefs?.toFilterLabels() ?? const <String>[];
+                return labels.map<Widget>((label) {
+                  return Padding(
+                    padding: const EdgeInsets.only(left: 10),
+                    child: HomeFilterChip(label: label),
+                  );
+                }).toList();
+              },
+              loading: () => [
+                const Padding(
+                  padding: EdgeInsets.only(left: 10),
+                  child: SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              ],
+              error: (_, __) => const <Widget>[],
+            ),
           ],
         ),
       ),
