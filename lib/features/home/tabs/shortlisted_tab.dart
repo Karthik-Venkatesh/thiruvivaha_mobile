@@ -14,7 +14,7 @@ class ShortlistedTab extends ConsumerStatefulWidget {
 class _ShortlistedTabState extends ConsumerState<ShortlistedTab>
     with SingleTickerProviderStateMixin {
   static const _primary = Color(0xFF7b001f);
-  static const _tabs = ['Shortlisted', 'Skipped Profiles'];
+  static const _tabs = ['Shortlisted', 'Skipped Profiles', 'Blocked Profiles'];
 
   late final TabController _tabController;
 
@@ -108,6 +108,7 @@ class _ShortlistedTabState extends ConsumerState<ShortlistedTab>
                         byThem: state.shortlistedBySomeone,
                       ),
                       _buildSkippedSection(items: state.skippedProfiles),
+                      _buildBlockedSection(items: state.blockedProfiles),
                     ],
                   ),
           ),
@@ -174,6 +175,25 @@ class _ShortlistedTabState extends ConsumerState<ShortlistedTab>
     );
   }
 
+  Widget _buildBlockedSection({required List<ShortlistedProfile> items}) {
+    if (items.isEmpty) {
+      return _buildEmpty(
+        icon: Icons.block,
+        title: 'No blocked profiles',
+        subtitle: 'Profiles you block will appear here',
+      );
+    }
+
+    return ListView.separated(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      itemCount: items.length,
+      separatorBuilder: (_, __) =>
+          const Divider(height: 1, indent: 80, color: Color(0xFFEEEEEE)),
+      itemBuilder: (context, index) =>
+          _ShortlistedTile(item: items[index], isBlocked: true),
+    );
+  }
+
   Widget _buildEmpty({
     required IconData icon,
     required String title,
@@ -218,6 +238,7 @@ class _ShortlistedTile extends StatelessWidget {
   const _ShortlistedTile({
     required this.item,
     this.isSkipped = false,
+    this.isBlocked = false,
     this.byMeLabel,
   });
 
@@ -225,6 +246,7 @@ class _ShortlistedTile extends StatelessWidget {
 
   final ShortlistedProfile item;
   final bool isSkipped;
+  final bool isBlocked;
   /// When non-null, show an inline "By you" / "By them" badge.
   final bool? byMeLabel;
 
@@ -236,7 +258,11 @@ class _ShortlistedTile extends StatelessWidget {
       if (item.displayLocation.isNotEmpty) item.displayLocation,
     ].join(' • ');
 
-    final dateLabel = isSkipped ? 'Skipped on' : 'Shortlisted on';
+    final dateLabel = isBlocked
+        ? 'Blocked on'
+        : isSkipped
+        ? 'Skipped on'
+        : 'Shortlisted on';
 
     return Container(
       color: Colors.white,
@@ -308,7 +334,9 @@ class _ShortlistedTile extends StatelessWidget {
                     '$dateLabel ${item.shortlistedAt!.day.toString().padLeft(2, '0')}/${item.shortlistedAt!.month.toString().padLeft(2, '0')}/${item.shortlistedAt!.year}',
                     style: GoogleFonts.manrope(
                       fontSize: 11,
-                      color: isSkipped
+                      color: isBlocked
+                          ? const Color(0xFFB71C1C)
+                          : isSkipped
                           ? const Color(0xFF888888)
                           : _primary,
                       fontWeight: FontWeight.w600,

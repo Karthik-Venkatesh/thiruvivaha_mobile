@@ -1,11 +1,13 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:thiruvivaha_mobile/config/supabase_config.dart';
+import 'package:thiruvivaha_mobile/core/utils/logger.dart';
 import 'package:thiruvivaha_mobile/features/home/domain/entities/shortlisted_profile.dart';
 
 class ShortlistedProfilesState {
   final List<ShortlistedProfile> shortlistedByMe;
   final List<ShortlistedProfile> shortlistedBySomeone;
   final List<ShortlistedProfile> skippedProfiles;
+  final List<ShortlistedProfile> blockedProfiles;
   final bool isLoading;
   final String? error;
 
@@ -13,6 +15,7 @@ class ShortlistedProfilesState {
     this.shortlistedByMe = const [],
     this.shortlistedBySomeone = const [],
     this.skippedProfiles = const [],
+    this.blockedProfiles = const [],
     this.isLoading = true,
     this.error,
   });
@@ -21,6 +24,7 @@ class ShortlistedProfilesState {
     List<ShortlistedProfile>? shortlistedByMe,
     List<ShortlistedProfile>? shortlistedBySomeone,
     List<ShortlistedProfile>? skippedProfiles,
+    List<ShortlistedProfile>? blockedProfiles,
     bool? isLoading,
     String? error,
     bool clearError = false,
@@ -29,6 +33,7 @@ class ShortlistedProfilesState {
       shortlistedByMe: shortlistedByMe ?? this.shortlistedByMe,
       shortlistedBySomeone: shortlistedBySomeone ?? this.shortlistedBySomeone,
       skippedProfiles: skippedProfiles ?? this.skippedProfiles,
+      blockedProfiles: blockedProfiles ?? this.blockedProfiles,
       isLoading: isLoading ?? this.isLoading,
       error: clearError ? null : (error ?? this.error),
     );
@@ -51,6 +56,8 @@ class ShortlistedProfilesNotifier
     state = state.copyWith(isLoading: true, clearError: true);
 
     try {
+      AppLogger.debug('shortlisted: fetching all tabs');
+
       final currentProfileId = await _fetchCurrentProfileId(authUserId);
       if (currentProfileId == null) {
         state = const ShortlistedProfilesState(isLoading: false);
@@ -66,6 +73,7 @@ class ShortlistedProfilesNotifier
         type: _ShortlistQueryType.bySomeone,
       );
       final skippedEntries = await _fetchSkippedEntries(currentProfileId);
+      final blockedProfiles = await _fetchBlockedProfiles();
 
       final shortlistedByMe = await _hydrateProfiles(shortlistedByMeEntries);
       final shortlistedBySomeone = await _hydrateProfiles(
@@ -77,9 +85,18 @@ class ShortlistedProfilesNotifier
         shortlistedByMe: shortlistedByMe,
         shortlistedBySomeone: shortlistedBySomeone,
         skippedProfiles: skippedProfiles,
+        blockedProfiles: blockedProfiles,
         isLoading: false,
       );
-    } catch (error) {
+
+      AppLogger.debug(
+        'shortlisted: byMe=${shortlistedByMe.length} '
+        'bySomeone=${shortlistedBySomeone.length} '
+        'skipped=${skippedProfiles.length} '
+        'blocked=${blockedProfiles.length}',
+      );
+    } catch (error, st) {
+      AppLogger.error('shortlisted: fetchAll failed — $error\n$st');
       state = state.copyWith(isLoading: false, error: error.toString());
     }
   }
@@ -148,6 +165,27 @@ class ShortlistedProfilesNotifier
       final map = row as Map<String, dynamic>;
       return _ShortlistedEntry(
         profileId: map['profile_id'] as String,
+        shortlistedAt: _parseDate(map['created_at']),
+      );
+    }).toList();
+  }
+
+  Future<List<ShortlistedProfile>> _fetchBlockedProfiles() async {
+    final response = await SupabaseConfig.client.rpc(
+      'get_connections',
+      params: {'p_type': 'blocked'},
+    );
+
+    return (response as List<dynamic>).map((row) {
+      final map = row as Map<String, dynamic>;
+      return ShortlistedProfile(
+        profileId: map['profile_id'] as String,
+        fullName: map['full_name'] as String? ?? 'Unknown',
+        dateOfBirth: _parseDate(map['date_of_birth']),
+        occupation: map['occupation'] as String?,
+        city: map['city'] as String?,
+        state: map['state'] as String?,
+        primaryPhoto: map['primary_photo'] as String?,
         shortlistedAt: _parseDate(map['created_at']),
       );
     }).toList();

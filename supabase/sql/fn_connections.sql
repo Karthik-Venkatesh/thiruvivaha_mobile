@@ -5,6 +5,7 @@
 --   'sent'     – I sent to others  (Pending only)
 --   'accepted' – mutually accepted
 --   'rejected' – rejected requests
+--   'blocked'  – profiles the current user has blocked
 --
 -- Client usage:
 --   supabase.rpc('get_connections', params: {'p_type': 'received'})
@@ -78,6 +79,8 @@ begin
                        and c.status = 'Accepted'
       when 'rejected' then (c.sender_id = v_caller_profile_id or c.receiver_id = v_caller_profile_id)
                        and c.status = 'Rejected'
+      when 'blocked'  then c.sender_id = v_caller_profile_id
+                       and c.status = 'Blocked'
       else false
     end
   order by c.created_at desc;
